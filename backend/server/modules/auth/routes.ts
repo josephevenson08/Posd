@@ -8,8 +8,7 @@ import { getSessionUser, requireAuth, toSafeUser } from "../../lib/auth";
 import { clearFailedLogins, getLoginBlockRemainingMs, recordFailedLogin } from "../../lib/login-security";
 import { hashPassword, validatePasswordStrength, verifyPassword } from "../../lib/password";
 import { sendOtpEmail } from "../../lib/email";
-
-const otpStore = new Map<number, { otp: string; expiresAt: Date }>();
+import { deleteOtp, generateOtpCode, storeOtp, verifyOtp } from "../../lib/otp";
 
 const updateProfileSchema = insertUserSchema.pick({
   email: true,
@@ -100,13 +99,18 @@ export function registerAuthRoutes(app: Express): void {
     req.session.role = user.role;
     req.session.mfaVerified = false;
 
-    // Generate 6 digit OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
-    otpStore.set(user.id, { otp: otpCode, expiresAt });
-    
-    // Ignore floating promise
-    sendOtpEmail(user.email, otpCode).catch(console.error);
+    const otpCode = generateOtpCode();
+    await storeOtp(user.id, otpCode);
+
+    try {
+      await sendOtpEmail(user.email, otpCode);
+    } catch (error) {
+      await deleteOtp(user.id);
+      console.error("Failed to send OTP email:", error);
+      return res.status(503).json({
+        message: "Unable to send the verification code right now. Please try again shortly.",
+      });
+    }
 
     const safeUser = toSafeUser(user);
 
@@ -130,22 +134,17 @@ export function registerAuthRoutes(app: Express): void {
       return res.status(400).json({ message: "OTP is required" });
     }
 
-    const storedData = otpStore.get(req.session.userId);
-    if (!storedData) {
+    const verificationResult = await verifyOtp(req.session.userId, otp);
+    if (verificationResult === "missing") {
       return res.status(400).json({ message: "No OTP was requested or OTP has expired" });
     }
-
-    if (new Date() > storedData.expiresAt) {
-      otpStore.delete(req.session.userId);
+    if (verificationResult === "expired") {
       return res.status(400).json({ message: "OTP has expired" });
     }
-
-    if (storedData.otp !== otp) {
+    if (verificationResult === "invalid") {
       return res.status(401).json({ message: "Invalid OTP code" });
     }
 
-    // Success!
-    otpStore.delete(req.session.userId);
     req.session.mfaVerified = true;
 
     const user = await storage.getUser(req.session.userId);
@@ -282,5 +281,31 @@ export function registerAuthRoutes(app: Express): void {
       }
       throw e;
     }
+  });
+
+  app.post("/api/auth/resend-otp", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "No active login session to verify" });
+    }
+
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const otpCode = generateOtpCode();
+    await storeOtp(user.id, otpCode);
+
+    try {
+      await sendOtpEmail(user.email, otpCode);
+    } catch (error) {
+      await deleteOtp(user.id);
+      console.error("Failed to resend OTP email:", error);
+      return res.status(503).json({
+        message: "Unable to resend the verification code right now. Please try again shortly.",
+      });
+    }
+
+    return res.json({ success: true });
   });
 }

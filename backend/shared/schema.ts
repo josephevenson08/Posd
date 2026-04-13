@@ -96,3 +96,22 @@ export const auditLogs = mysqlTable("audit_logs", {
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, timestamp: true });
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+export const authOtps = mysqlTable("auth_otps", {
+  userId: int("user_id").primaryKey(),
+  otpHash: varchar("otp_hash", { length: 64 }).notNull(),
+  expiresAt: datetime("expires_at").notNull(),
+  createdAt: datetime("created_at").default(new Date()),
+});
+
+export type AuthOtp = typeof authOtps.$inferSelect;
+
+export const sessions = mysqlTable("sessions", {
+  sid: varchar("sid", { length: 255 }).primaryKey(),
+  data: text("data").notNull(),
+  expiresAt: datetime("expires_at").notNull(),
+  createdAt: datetime("created_at").default(new Date()),
+  updatedAt: datetime("updated_at").default(new Date()),
+});
+
+export type SessionRecord = typeof sessions.$inferSelect;

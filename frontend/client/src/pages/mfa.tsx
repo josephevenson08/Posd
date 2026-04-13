@@ -47,13 +47,22 @@ export default function MfaPage() {
   const handleResend = () => {
     setIsSending(true);
     setOtp("");
-    setTimeout(() => {
-      setIsSending(false);
-      toast({
-        title: "Check Email",
-        description: "If you want another code, please try signing in again.",
+    apiRequest("POST", "/api/auth/resend-otp")
+      .then(() => {
+        setIsSending(false);
+        toast({
+          title: "Code Sent",
+          description: "A fresh verification code has been sent to your email address.",
+        });
+      })
+      .catch((err: Error) => {
+        setIsSending(false);
+        toast({
+          title: "Resend Failed",
+          description: err.message,
+          variant: "destructive",
+        });
       });
-    }, 1500);
   };
 
   const handleVerify = async (e: React.FormEvent) => {

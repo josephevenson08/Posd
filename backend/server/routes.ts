@@ -10,6 +10,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express,
 ): Promise<Server> {
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
   registerAuthRoutes(app); // Auth + doctors routes.
   registerAuditRoutes(app); // Audit log route.
   registerPatientRoutes(app); // Patient CRUD routes.

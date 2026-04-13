@@ -10,6 +10,6 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required, ensure the database is configured");
 }
 
-const pool = mysql.createPool(process.env.DATABASE_URL);
+export const pool = mysql.createPool(process.env.DATABASE_URL);
 
 export const db = drizzle(pool);

@@ -13,6 +13,7 @@ export async function logAction(
       action,
       details,
       ipAddress: ip, // Map request IP to audit log column.
+      timestamp: new Date(),
     });
   } catch (e) {
     console.error("Failed to write audit log:", e); // Keep main flow alive if logging fails.

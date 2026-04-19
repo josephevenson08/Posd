@@ -17,6 +17,7 @@ export default function MfaPage() {
   const [isSending, setIsSending] = useState(true);
   const [otp, setOtp] = useState("");
   const [maskedPhone, setMaskedPhone] = useState("");
+  const [resendCountdown, setResendCountdown] = useState(30);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -42,27 +43,61 @@ export default function MfaPage() {
         description: "A 6-digit verification code has been sent to your email address.",
       });
     }, 1500);
-  }, []);
+  }, [setLocation, toast]);
 
-  const handleResend = () => {
+  useEffect(() => {
+    if (isSending || resendCountdown <= 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setResendCountdown((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer);
+          return 0;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isSending, resendCountdown]);
+
+  const handleResend = async () => {
+    if (isSending || resendCountdown > 0) {
+      return;
+    }
+
     setIsSending(true);
     setOtp("");
-    apiRequest("POST", "/api/auth/resend-otp")
-      .then(() => {
-        setIsSending(false);
-        toast({
-          title: "Code Sent",
-          description: "A fresh verification code has been sent to your email address.",
-        });
-      })
-      .catch((err: Error) => {
-        setIsSending(false);
-        toast({
-          title: "Resend Failed",
-          description: err.message,
-          variant: "destructive",
-        });
+    try {
+      const res = await fetch("/api/auth/resend-otp", {
+        method: "POST",
+        credentials: "include",
       });
+      const payload = await res.json();
+      if (!res.ok) {
+        if (payload?.retryAfterMs) {
+          setResendCountdown(Math.ceil(payload.retryAfterMs / 1000));
+        }
+        throw new Error(payload?.message || "Unable to resend the code.");
+      }
+
+      setResendCountdown(Math.ceil((payload.retryAfterMs ?? 30000) / 1000));
+      toast({
+        title: "Code Sent",
+        description: "A fresh verification code has been sent to your email address.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Resend Failed",
+        description: err?.message || "Unable to resend the code.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleVerify = async (e: React.FormEvent) => {
@@ -168,11 +203,14 @@ export default function MfaPage() {
             <div className="text-center text-sm text-slate-500 animate-in fade-in slide-in-from-bottom-2">
               Didn't receive the code?{" "}
               <button
+                type="button"
                 className="font-semibold text-primary hover:text-primary/80 cursor-pointer transition-colors ml-1 inline-flex items-center"
                 onClick={handleResend}
+                disabled={isSending || resendCountdown > 0}
                 data-testid="button-resend"
               >
-                Resend code <RefreshCw className="ml-1 w-3 h-3" />
+                {resendCountdown > 0 ? `Resend in ${resendCountdown}s` : "Resend code"}
+                <RefreshCw className={`ml-1 w-3 h-3 ${isSending ? "animate-spin" : ""}`} />
               </button>
             </div>
           )}

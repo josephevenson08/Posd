@@ -24,6 +24,8 @@ const forgotPasswordSchema = z.object({
   email: insertUserSchema.shape.email,
 });
 
+const OTP_RESEND_COOLDOWN_MS = 30 * 1000;
+
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
   password: insertUserSchema.shape.password,
@@ -227,7 +229,22 @@ export function registerAuthRoutes(app: Express): void {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
-    req.session.mfaVerified = false;
+    req.session.mfaVerified = user.role === "admin";
+
+    const safeUser = toSafeUser(user);
+
+    if (user.role === "admin") {
+      await logAction(
+        username,
+        "LOGIN",
+        `${user.firstName} ${user.lastName} logged in successfully (admin OTP bypass)` ,
+        req.ip || "unknown",
+      );
+
+      return res.json({ ...safeUser, mfaRequired: false });
+    }
+
+    req.session.otpResendAvailableAt = Date.now() + OTP_RESEND_COOLDOWN_MS;
 
     const otpCode = generateOtpCode();
     await storeOtp(user.id, otpCode);
@@ -241,8 +258,6 @@ export function registerAuthRoutes(app: Express): void {
         message: "Unable to send the verification code right now. Please try again shortly.",
       });
     }
-
-    const safeUser = toSafeUser(user);
 
     await logAction(
       username,
@@ -418,6 +433,15 @@ export function registerAuthRoutes(app: Express): void {
       return res.status(401).json({ message: "No active login session to verify" });
     }
 
+    const availableAt = req.session.otpResendAvailableAt || 0;
+    const remainingMs = availableAt - Date.now();
+    if (remainingMs > 0) {
+      return res.status(429).json({
+        message: `Please wait ${Math.ceil(remainingMs / 1000)} second(s) before requesting another code.`,
+        retryAfterMs: remainingMs,
+      });
+    }
+
     const user = await storage.getUser(req.session.userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -428,6 +452,7 @@ export function registerAuthRoutes(app: Express): void {
 
     try {
       await sendOtpEmail(user.email, otpCode);
+      req.session.otpResendAvailableAt = Date.now() + OTP_RESEND_COOLDOWN_MS;
     } catch (error) {
       await deleteOtp(user.id);
       console.error("Failed to resend OTP email:", error);
@@ -436,6 +461,6 @@ export function registerAuthRoutes(app: Express): void {
       });
     }
 
-    return res.json({ success: true });
+    return res.json({ success: true, retryAfterMs: OTP_RESEND_COOLDOWN_MS });
   });
 }

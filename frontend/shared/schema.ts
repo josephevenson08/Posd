@@ -9,7 +9,7 @@ export const users = mysqlTable("users", {
   password: text("password").notNull(),
   firstName: varchar("first_name", { length: 64 }).notNull(),
   lastName: varchar("last_name", { length: 64 }).notNull(),
-  email: varchar("email", { length: 120 }).notNull(),
+  email: varchar("email", { length: 120 }).notNull().unique(),
   phone: varchar("phone", { length: 15 }),
   specialty: varchar("specialty", { length: 50 }),
 });

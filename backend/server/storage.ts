@@ -3,6 +3,7 @@ import {
   type Patient, type InsertPatient, patients,
   type MedicalRecord, type InsertMedicalRecord, medicalRecords,
   type Referral, type InsertReferral, referrals,
+  type PasswordResetToken, passwordResetTokens,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
@@ -19,6 +20,10 @@ export interface IStorage {
     user: Partial<Pick<InsertUser, "email" | "phone">>,
   ): Promise<User | undefined>;
   updateUserPassword(id: number, password: string): Promise<User | undefined>;
+  upsertPasswordResetToken(userId: number, tokenHash: string, expiresAt: Date): Promise<void>;
+  getActivePasswordResetTokenByHash(tokenHash: string): Promise<PasswordResetToken | undefined>;
+  deletePasswordResetTokenByHash(tokenHash: string): Promise<void>;
+  deletePasswordResetTokensByUserId(userId: number): Promise<void>;
 
   // Patients
   getPatients(): Promise<Patient[]>;
@@ -82,6 +87,43 @@ export class DatabaseStorage implements IStorage {
   async updateUserPassword(id: number, password: string): Promise<User | undefined> {
     await db.update(users).set({ password }).where(eq(users.id, id));
     return this.getUser(id);
+  }
+
+  async upsertPasswordResetToken(userId: number, tokenHash: string, expiresAt: Date): Promise<void> {
+    await db.insert(passwordResetTokens)
+      .values({ userId, tokenHash, expiresAt, createdAt: new Date() })
+      .onDuplicateKeyUpdate({
+        set: {
+          tokenHash,
+          expiresAt,
+          createdAt: new Date(),
+        },
+      });
+  }
+
+  async getActivePasswordResetTokenByHash(tokenHash: string): Promise<PasswordResetToken | undefined> {
+    const [token] = await db
+      .select()
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.tokenHash, tokenHash));
+
+    if (!token) {
+      return undefined;
+    }
+
+    if (token.expiresAt <= new Date()) {
+      return undefined;
+    }
+
+    return token;
+  }
+
+  async deletePasswordResetTokenByHash(tokenHash: string): Promise<void> {
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash));
+  }
+
+  async deletePasswordResetTokensByUserId(userId: number): Promise<void> {
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
   }
 
   // ── Patients ───────────────────────────────────────────

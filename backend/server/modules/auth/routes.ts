@@ -1,14 +1,15 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { storage } from "../../storage";
 import { insertUserSchema } from "@shared/schema";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { logAction } from "../../lib/audit";
 import { getSessionUser, requireAuth, toSafeUser } from "../../lib/auth";
 import { clearFailedLogins, getLoginBlockRemainingMs, recordFailedLogin } from "../../lib/login-security";
 import { hashPassword, validatePasswordStrength, verifyPassword } from "../../lib/password";
-import { sendOtpEmail } from "../../lib/email";
+import { sendOtpEmail, sendPasswordResetEmail } from "../../lib/email";
 import { deleteOtp, generateOtpCode, storeOtp, verifyOtp } from "../../lib/otp";
+import { createHash, randomBytes } from "crypto";
 
 const updateProfileSchema = insertUserSchema.pick({
   email: true,
@@ -19,7 +20,136 @@ const changePasswordSchema = insertUserSchema.pick({ password: true }).extend({
   currentPassword: insertUserSchema.shape.password,
 });
 
+const forgotPasswordSchema = z.object({
+  email: insertUserSchema.shape.email,
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: insertUserSchema.shape.password,
+  confirmPassword: insertUserSchema.shape.password.optional(),
+});
+
+function getAppBaseUrl(req: Request): string {
+  const configuredBaseUrl = process.env.APP_BASE_URL || process.env.FRONTEND_URL;
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, "");
+  }
+
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+function hashResetToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export function registerAuthRoutes(app: Express): void {
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const data = forgotPasswordSchema.parse(req.body);
+      const user = await storage.getUserByEmail(data.email);
+
+      // Keep response generic to avoid exposing whether an email exists.
+      const genericResponse = {
+        success: true,
+        message: "If the email exists, a reset link has been sent.",
+      };
+
+      if (!user) {
+        return res.json(genericResponse);
+      }
+
+      const rawToken = randomBytes(32).toString("hex");
+      const tokenHash = hashResetToken(rawToken);
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+      await storage.upsertPasswordResetToken(user.id, tokenHash, expiresAt);
+
+      const resetLink = `${getAppBaseUrl(req)}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+      try {
+        await sendPasswordResetEmail(user.email, resetLink);
+      } catch (error) {
+        console.error("Failed to send password reset email:", error);
+      }
+
+      await logAction(
+        user.username,
+        "PASSWORD_RESET_REQUESTED",
+        `${user.firstName} ${user.lastName} requested a password reset link`,
+        req.ip || "unknown",
+      );
+
+      return res.json(genericResponse);
+    } catch (e) {
+      if (e instanceof ZodError) {
+        return res.status(400).json({ message: fromZodError(e).message });
+      }
+      throw e;
+    }
+  });
+
+  app.get("/api/auth/reset-password/validate", async (req, res) => {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    if (!token) {
+      return res.json({ valid: false });
+    }
+
+    const tokenHash = hashResetToken(token);
+    const resetToken = await storage.getActivePasswordResetTokenByHash(tokenHash);
+    return res.json({ valid: Boolean(resetToken) });
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const data = resetPasswordSchema.parse(req.body);
+
+      if (data.confirmPassword && data.confirmPassword !== data.password) {
+        return res.status(400).json({ message: "Passwords do not match" });
+      }
+
+      const passwordError = validatePasswordStrength(data.password);
+      if (passwordError) {
+        return res.status(400).json({ message: passwordError });
+      }
+
+      const tokenHash = hashResetToken(data.token);
+      const resetToken = await storage.getActivePasswordResetTokenByHash(tokenHash);
+      if (!resetToken) {
+        return res.status(400).json({ message: "Invalid or expired reset link" });
+      }
+
+      const user = await storage.getUser(resetToken.userId);
+      if (!user) {
+        await storage.deletePasswordResetTokenByHash(tokenHash);
+        return res.status(400).json({ message: "Invalid or expired reset link" });
+      }
+
+      const sameAsCurrent = await verifyPassword(data.password, user.password);
+      if (sameAsCurrent) {
+        return res.status(400).json({ message: "New password must be different from current password" });
+      }
+
+      const hashedPassword = await hashPassword(data.password);
+      await storage.updateUserPassword(user.id, hashedPassword);
+      await storage.deletePasswordResetTokensByUserId(user.id);
+
+      await logAction(
+        user.username,
+        "PASSWORD_RESET_COMPLETED",
+        `${user.firstName} ${user.lastName} reset their password via email link`,
+        req.ip || "unknown",
+      );
+
+      return res.json({ success: true });
+    } catch (e) {
+      if (e instanceof ZodError) {
+        return res.status(400).json({ message: fromZodError(e).message });
+      }
+      throw e;
+    }
+  });
+
   app.post("/api/auth/register", async (req, res) => {
     try {
       const data = insertUserSchema.parse(req.body); // Validate incoming payload.

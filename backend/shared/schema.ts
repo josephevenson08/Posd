@@ -10,7 +10,7 @@ export const users = mysqlTable("users", {
   role: varchar("role", { length: 20 }).notNull().default("doctor"),
   firstName: varchar("first_name", { length: 64 }).notNull(),
   lastName: varchar("last_name", { length: 64 }).notNull(),
-  email: varchar("email", { length: 120 }).notNull(),
+  email: varchar("email", { length: 120 }).notNull().unique(),
   phone: varchar("phone", { length: 15 }),
   specialty: varchar("specialty", { length: 50 }),
 });
@@ -105,6 +105,15 @@ export const authOtps = mysqlTable("auth_otps", {
 });
 
 export type AuthOtp = typeof authOtps.$inferSelect;
+
+export const passwordResetTokens = mysqlTable("password_reset_tokens", {
+  userId: int("user_id").primaryKey(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  expiresAt: datetime("expires_at").notNull(),
+  createdAt: datetime("created_at").default(new Date()),
+});
+
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 
 export const sessions = mysqlTable("sessions", {
   sid: varchar("sid", { length: 255 }).primaryKey(),

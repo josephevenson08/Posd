@@ -6,6 +6,7 @@ import { createServer } from "http";
 import path from "path";
 import fs from "fs";
 import { MySqlSessionStore } from "./lib/session-store";
+import { seedDemoClinicalData } from "./lib/seed-demo-data";
 
 const app = express();
 const httpServer = createServer(app);
@@ -86,6 +87,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  await seedDemoClinicalData();
 
   if (isProduction && fs.existsSync(frontendDistPath)) {
     app.use(express.static(frontendDistPath));

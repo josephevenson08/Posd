@@ -39,8 +39,8 @@ This repo is set up for a single Railway web service plus one Railway MySQL serv
 
 - Railway web service runs the backend
 - The backend serves the built frontend in production
-- MySQL stores app data, login sessions, and OTP verification records
-- OTP emails are sent through your real SMTP provider
+- MySQL stores app data, login sessions, OTP verification records, and password reset tokens
+- OTP and password reset emails are sent through your real SMTP provider
 
 ### Required Railway environment variables
 
@@ -48,15 +48,22 @@ Set these on the Railway web service:
 
 ```env
 DATABASE_URL=mysql://user:password@host:3306/doctor_patient_db
-PORT=5001
 SESSION_SECRET=replace-with-a-long-random-secret
+APP_BASE_URL=https://your-app.up.railway.app
 SMTP_HOST=smtp.your-provider.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-smtp-username
 SMTP_PASS=your-smtp-password
 SMTP_FROM="Doctor Portal <no-reply@yourdomain.com>"
+SEED_DEMO_DATA=true
 ```
+
+Notes:
+
+- Do not force `PORT` on Railway unless required; Railway injects `PORT` automatically.
+- `APP_BASE_URL` is used in password reset links.
+- `SEED_DEMO_DATA=true` enables startup seeding for demo/testing workflows.
 
 ### Gmail SMTP settings
 
@@ -119,10 +126,28 @@ mysql -h mysql.railway.internal -P 3306 -u root -p doctor_patient_db < database/
 
 If Railway gives you a full `MYSQL_URL`, you can also connect with a GUI client like MySQL Workbench, TablePlus, or DBeaver and import the `.sql` file there.
 
-After importing, run this once from the Railway app shell to make sure the new session and OTP tables exist too:
+After importing, run this once from the Railway web-service shell to make sure session, OTP, and password reset tables exist:
 
 ```bash
 cd backend && npm run db:push
+```
+
+Important:
+
+- Run `db:push` from the web app service shell (the GitHub service), not the MySQL service shell.
+
+### Manual fallback for missing password reset table
+
+If forgot password fails with a table-missing error and you need a quick manual DB fix, run this in MySQL Workbench against your Railway database:
+
+```sql
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+	user_id INT NOT NULL PRIMARY KEY,
+	token_hash VARCHAR(64) NOT NULL,
+	expires_at DATETIME NOT NULL,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE KEY uq_password_reset_tokens_token_hash (token_hash)
+);
 ```
 
 ### Accessing the app
@@ -134,5 +159,6 @@ Once deployed, you can open the Railway-generated public URL from any device and
 - Local dev frontend runs on `http://localhost:5000`
 - Local dev backend runs on `http://localhost:5001`
 - Production serves the frontend and backend from one public Railway URL
-- OTP email now requires real SMTP configuration and is no longer using Ethereal test mail
+- OTP and password reset email require real SMTP configuration and are no longer using Ethereal test mail
+- Doctor login requires OTP; admin login bypasses OTP and can access audit immediately
 - SMS OTP is not wired up yet; email OTP is production-ready, and SMS could be added later with Twilio or Vonage

@@ -2,6 +2,32 @@ import nodemailer from "nodemailer";
 
 let cachedTransporter: nodemailer.Transporter | null = null;
 
+const EMAIL_SEND_TIMEOUT_MS = Number(process.env.SMTP_SEND_TIMEOUT_MS || "12000");
+
+async function sendMailWithTimeout(
+  transporter: nodemailer.Transporter,
+  options: nodemailer.SendMailOptions,
+): Promise<void> {
+  let timeoutHandle: NodeJS.Timeout | null = null;
+
+  try {
+    await Promise.race([
+      transporter.sendMail(options),
+      new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`SMTP send timed out after ${EMAIL_SEND_TIMEOUT_MS}ms`));
+        }, EMAIL_SEND_TIMEOUT_MS);
+
+        timeoutHandle.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 async function getTransporter() {
   if (cachedTransporter) return cachedTransporter;
 
@@ -18,6 +44,9 @@ async function getTransporter() {
     host,
     port,
     secure: process.env.SMTP_SECURE === "true" || port === 465,
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || "8000"),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || "8000"),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || "12000"),
     auth: {
       user,
       pass,
@@ -31,7 +60,7 @@ export async function sendOtpEmail(email: string, otpCode: string): Promise<void
   const transporter = await getTransporter();
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || "no-reply@example.com";
 
-  await transporter.sendMail({
+  await sendMailWithTimeout(transporter, {
     from,
     to: email,
     subject: "Your Login Verification Code",
@@ -44,7 +73,7 @@ export async function sendPasswordResetEmail(email: string, resetLink: string): 
   const transporter = await getTransporter();
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || "no-reply@example.com";
 
-  await transporter.sendMail({
+  await sendMailWithTimeout(transporter, {
     from,
     to: email,
     subject: "Reset Your Password",

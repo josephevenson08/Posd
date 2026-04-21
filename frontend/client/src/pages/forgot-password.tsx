@@ -19,7 +19,15 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
 
     try {
-      await apiRequest("POST", "/api/auth/forgot-password", { email });
+      const res = await apiRequest("POST", "/api/auth/forgot-password", { email });
+      const payload = await res.json?.();
+      if (payload?.deliveryStatus === "delayed") {
+        toast({
+          title: "Email Delivery Delayed",
+          description: "We could not send the reset email right now. Please check spam or try again soon.",
+          variant: "destructive",
+        });
+      }
       setIsSuccess(true);
     } catch (error: any) {
       toast({

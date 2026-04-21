@@ -69,9 +69,11 @@ export function registerAuthRoutes(app: Express): void {
 
       const resetLink = `${getAppBaseUrl(req)}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
+      let deliveryStatus: "sent" | "delayed" = "sent";
       try {
         await sendPasswordResetEmail(user.email, resetLink);
       } catch (error) {
+        deliveryStatus = "delayed";
         console.error("Failed to send password reset email:", error);
       }
 
@@ -82,7 +84,7 @@ export function registerAuthRoutes(app: Express): void {
         req.ip || "unknown",
       );
 
-      return res.json(genericResponse);
+      return res.json({ ...genericResponse, deliveryStatus });
     } catch (e) {
       if (e instanceof ZodError) {
         return res.status(400).json({ message: fromZodError(e).message });

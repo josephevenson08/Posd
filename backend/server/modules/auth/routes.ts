@@ -8,7 +8,7 @@ import { getSessionUser, requireAuth, toSafeUser } from "../../lib/auth";
 import { clearFailedLogins, getLoginBlockRemainingMs, recordFailedLogin } from "../../lib/login-security";
 import { hashPassword, validatePasswordStrength, verifyPassword } from "../../lib/password";
 import { sendOtpEmail, sendPasswordResetEmail } from "../../lib/email";
-import { deleteOtp, generateOtpCode, storeOtp, verifyOtp } from "../../lib/otp";
+import { generateOtpCode, storeOtp, verifyOtp } from "../../lib/otp";
 import { createHash, randomBytes } from "crypto";
 
 const updateProfileSchema = insertUserSchema.pick({
@@ -249,14 +249,13 @@ export function registerAuthRoutes(app: Express): void {
     const otpCode = generateOtpCode();
     await storeOtp(user.id, otpCode);
 
+    let otpDeliveryStatus: "sent" | "delayed" = "sent";
     try {
       await sendOtpEmail(user.email, otpCode);
     } catch (error) {
-      await deleteOtp(user.id);
+      otpDeliveryStatus = "delayed";
+      req.session.otpResendAvailableAt = Date.now();
       console.error("Failed to send OTP email:", error);
-      return res.status(503).json({
-        message: "Unable to send the verification code right now. Please try again shortly.",
-      });
     }
 
     await logAction(
@@ -266,7 +265,14 @@ export function registerAuthRoutes(app: Express): void {
       req.ip || "unknown",
     );
 
-    return res.json({ ...safeUser, mfaRequired: true });
+    return res.json({
+      ...safeUser,
+      mfaRequired: true,
+      otpDeliveryStatus,
+      ...(otpDeliveryStatus === "delayed"
+        ? { otpNotice: "Verification email may be delayed. You can request a resend on the next screen." }
+        : {}),
+    });
   });
 
   app.post("/api/auth/verify-otp", async (req, res) => {
@@ -454,7 +460,6 @@ export function registerAuthRoutes(app: Express): void {
       await sendOtpEmail(user.email, otpCode);
       req.session.otpResendAvailableAt = Date.now() + OTP_RESEND_COOLDOWN_MS;
     } catch (error) {
-      await deleteOtp(user.id);
       console.error("Failed to resend OTP email:", error);
       return res.status(503).json({
         message: "Unable to resend the verification code right now. Please try again shortly.",

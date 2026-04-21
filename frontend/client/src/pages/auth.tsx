@@ -23,6 +23,15 @@ export default function AuthPage() {
       const res = await apiRequest("POST", "/api/auth/login", { username, password });
       const user = await res.json();
       localStorage.setItem("mediportal_user", JSON.stringify(user));
+
+      if (user?.otpDeliveryStatus === "delayed") {
+        toast({
+          title: "Verification Email Delayed",
+          description:
+            user?.otpNotice || "Your verification email may be delayed. You can resend from the next screen.",
+        });
+      }
+
       setLocation(user.role === "admin" ? "/audit-log" : "/mfa");
     } catch (error: any) {
       const message = error?.message || "Login failed";

@@ -34,12 +34,6 @@ export default function DashboardHome() {
       icon: Activity,
       color: "bg-amber-500",
     },
-    {
-      title: "Critical Alerts",
-      value: "0",
-      icon: AlertCircle,
-      color: "bg-red-500",
-    },
   ];
 
   const recentPatients = patients.slice(0, 4);

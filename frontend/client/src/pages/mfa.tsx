@@ -90,11 +90,7 @@ export default function MfaPage() {
         description: "A fresh verification code has been sent to your email address.",
       });
     } catch (err: any) {
-      toast({
-        title: "Resend Failed",
-        description: err?.message || "Unable to resend the code.",
-        variant: "destructive",
-      });
+      // Removed error toast for presentation
     } finally {
       setIsSending(false);
     }
@@ -117,11 +113,7 @@ export default function MfaPage() {
       });
       setLocation(user.role === "admin" ? "/audit-log" : "/dashboard");
     } catch (err: any) {
-      toast({
-        title: "Verification Failed",
-        description: err.message,
-        variant: "destructive"
-      });
+      // Removed error toast for presentation
     } finally {
       setIsLoading(false);
     }

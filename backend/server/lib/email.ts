@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 
 let cachedTransporter: nodemailer.Transporter | null = null;
 
-const EMAIL_SEND_TIMEOUT_MS = Number(process.env.SMTP_SEND_TIMEOUT_MS || "12000");
+const EMAIL_SEND_TIMEOUT_MS = Number(process.env.SMTP_SEND_TIMEOUT_MS || "4000");
 
 async function sendMailWithTimeout(
   transporter: nodemailer.Transporter,
@@ -44,9 +44,9 @@ async function getTransporter() {
     host,
     port,
     secure: process.env.SMTP_SECURE === "true" || port === 465,
-    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || "8000"),
-    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || "8000"),
-    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || "12000"),
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || "3000"),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || "3000"),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || "4000"),
     auth: {
       user,
       pass,

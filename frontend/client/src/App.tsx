@@ -8,6 +8,7 @@ import AuthPage from "@/pages/auth";
 import MfaPage from "@/pages/mfa";
 import SignupPage from "@/pages/signup";
 import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import AuditLogPage from "@/pages/audit-log";
 
 import DashboardHome from "@/pages/dashboard/home";
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/mfa" component={MfaPage} />
       <Route path="/signup" component={SignupPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       
       {/* Dashboard Routes */}
       <Route path="/dashboard" component={DashboardHome} />

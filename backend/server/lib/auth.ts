@@ -7,6 +7,7 @@ declare module "express-session" {
     username?: string;
     role?: string;
     mfaVerified?: boolean;
+    otpResendAvailableAt?: number;
   }
 }
 
